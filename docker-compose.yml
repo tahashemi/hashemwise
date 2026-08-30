@@ -1,0 +1,28 @@
+# Hashemwise
+#
+# No `version:` key - it has been obsolete since Compose v2 and only produces
+# a warning now.
+#
+# The bot uses long polling, so no ports are published and no inbound firewall
+# rule is needed. It only makes outbound connections to api.telegram.org.
+
+services:
+  hashemwise:
+    build: .
+    image: hashemwise:latest
+    container_name: hashemwise-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Must stay inside the mounted volume below. The two going out of sync
+      # is how a ledger ends up written to the container's own filesystem and
+      # lost on the next rebuild.
+      DB_PATH: /app/data/ledger.db
+    volumes:
+      - ./data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

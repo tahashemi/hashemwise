@@ -1,0 +1,10 @@
+# Store everything with LF in the repository.
+* text=auto eol=lf
+
+# These are executed on Linux; a CRLF line ending makes the shebang fail with
+# "bad interpreter", so pin them explicitly regardless of the checkout platform.
+*.sh   text eol=lf
+*.py   text eol=lf
+*.sql  text eol=lf
+*.yml  text eol=lf
+Dockerfile text eol=lf
