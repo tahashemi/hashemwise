@@ -233,7 +233,11 @@ def history_keyboard(
     if nav:
         builder.row(*nav)
 
-    return assert_fits(builder.as_markup())
+    markup = assert_fits(builder.as_markup())
+    # A member reading a single page of history has neither delete buttons nor
+    # paging, which would send Telegram a reply_markup whose inline_keyboard is
+    # an empty array. Send no markup at all rather than an empty one.
+    return markup if markup.inline_keyboard else None
 
 
 def delete_confirm_keyboard(ref: str, flow: str, owner: int, lang: str) -> InlineKeyboardMarkup:

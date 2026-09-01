@@ -119,7 +119,7 @@ async def settle_payee(
         )
 
 
-@router.message(SettleStates.amount)
+@router.message(SettleStates.amount, F.reply_to_message)
 async def settle_amount(
     message: Message, state: FSMContext, db: Database, group: Group, lang: str
 ) -> None:

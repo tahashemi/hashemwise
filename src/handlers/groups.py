@@ -284,7 +284,7 @@ async def group_add_prompt(
         await ask(callback.message, state, t("group_add_prompt", lang))
 
 
-@router.message(AdminStates.add_group_id)
+@router.message(AdminStates.add_group_id, F.reply_to_message)
 async def group_add(
     message: Message,
     state: FSMContext,

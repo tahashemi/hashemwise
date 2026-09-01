@@ -50,6 +50,10 @@ def members(n: int = 8) -> list[Member]:
 
 
 def all_data(markup) -> list[str]:
+    # history_keyboard returns None when there would be no buttons at all,
+    # rather than sending Telegram an empty inline_keyboard.
+    if markup is None:
+        return []
     return [b.callback_data for row in markup.inline_keyboard for b in row if b.callback_data]
 
 
@@ -260,3 +264,28 @@ class TestAdminGroupPanel:
     def test_valueless_admin_action_round_trips(self):
         restored = AdminCB.unpack(AdminCB(a="gadd").pack())
         assert restored.a == "gadd" and restored.v is None
+
+
+class TestHistoryKeyboardIsNeverEmpty:
+    """Telegram is sent no markup rather than an empty one.
+
+    A member reading a single page has no delete buttons and no paging, which
+    would otherwise produce reply_markup with an empty inline_keyboard array.
+    """
+
+    ONE = [{"kind": "expense", "id": 1, "voided_at": None}]
+
+    def test_member_single_page_gets_no_markup(self):
+        assert history_keyboard(self.ONE, 1, 1, "tok12345", BIG_OWNER, "en") is None
+
+    def test_member_with_paging_still_gets_markup(self):
+        markup = history_keyboard(self.ONE, 1, 3, "tok12345", BIG_OWNER, "en")
+        assert markup is not None and markup.inline_keyboard
+
+    def test_admin_single_page_gets_markup(self):
+        markup = history_keyboard(self.ONE, 1, 1, "tok12345", BIG_OWNER, "en", can_delete=True)
+        assert markup is not None and markup.inline_keyboard
+
+    def test_all_entries_voided_and_single_page_gets_no_markup(self):
+        voided = [{"kind": "expense", "id": 1, "voided_at": "2026-01-01T00:00:00Z"}]
+        assert history_keyboard(voided, 1, 1, "tok12345", BIG_OWNER, "en", can_delete=True) is None

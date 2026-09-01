@@ -152,7 +152,7 @@ async def setup_language(
         await ask(callback.message, state, t("setup_members_prompt", chosen))
 
 
-@router.message(SetupStates.members)
+@router.message(SetupStates.members, F.reply_to_message)
 async def setup_members(
     message: Message, state: FSMContext, db: Database, group: Group, lang: str
 ) -> None:

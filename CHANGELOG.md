@@ -7,6 +7,22 @@ An update never rewrites your ledger. `schema.sql` is applied with
 appear on their own. Any release that alters an existing column will say so
 here, explicitly, along with what to do about it.
 
+## 1.1.2
+
+### Fixed
+
+- **Commands were silently swallowed by an abandoned wizard.** Every
+  ForceReply step was registered against its FSM state alone, so while that
+  state was active it matched *any* message the user sent - including
+  commands. The handler saw the message was not a reply to its prompt and
+  returned, which stops aiogram routing it any further. Anyone who started
+  `/expense` and walked away got no response to `/history` afterwards, because
+  the history router is registered after the expense one. Those handlers now
+  also require `F.reply_to_message`, so anything else falls through.
+- `/history` sent Telegram a `reply_markup` containing an empty
+  `inline_keyboard` for a member reading a single page, who has neither delete
+  buttons nor paging. It now sends no markup at all.
+
 ## 1.1.1
 
 ### Fixed

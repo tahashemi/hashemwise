@@ -76,7 +76,7 @@ async def expense_start(
     await ask(message, state, t("expense_amount", lang, currency=group.currency_code))
 
 
-@router.message(ExpenseStates.amount)
+@router.message(ExpenseStates.amount, F.reply_to_message)
 async def expense_amount(
     message: Message, state: FSMContext, group: Group, lang: str
 ) -> None:
@@ -96,7 +96,7 @@ async def expense_amount(
     await ask(message, state, t("expense_description", lang))
 
 
-@router.message(ExpenseStates.description)
+@router.message(ExpenseStates.description, F.reply_to_message)
 async def expense_description(
     message: Message, state: FSMContext, db: Database, group: Group, lang: str
 ) -> None:
@@ -247,7 +247,7 @@ async def expense_split_type(
         await _ask_next_custom_share(callback.message, state, db, group, lang)
 
 
-@router.message(ExpenseStates.custom_amount)
+@router.message(ExpenseStates.custom_amount, F.reply_to_message)
 async def expense_custom_amount(
     message: Message, state: FSMContext, db: Database, group: Group, lang: str
 ) -> None:
