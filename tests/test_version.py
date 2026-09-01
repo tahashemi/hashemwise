@@ -52,8 +52,8 @@ class TestInstallerContract:
 
     def test_installer_supports_version_pinning(self):
         installer = self._installer()
-        assert 'VERSION="${VERSION:-}"' in installer
-        assert "refs/tags/$VERSION" in installer
+        assert 'RELEASE_TAG="${VERSION:-}"' in installer
+        assert "refs/tags/$RELEASE_TAG" in installer
 
     def test_installer_does_not_shallow_clone(self):
         # A shallow clone cannot check out an older tag, which would make the
@@ -63,3 +63,65 @@ class TestInstallerContract:
             line for line in self._installer().splitlines() if not line.lstrip().startswith("#")
         ]
         assert not [line for line in code if "--depth" in line]
+
+
+class TestOsReleaseCollisions:
+    """install.sh sources /etc/os-release, which defines a fixed set of names.
+
+    Assigning any of them beforehand means the distribution silently replaces
+    the value. That is exactly how `VERSION=v1.0.0` became `12 (bookworm)` on
+    Debian and made the installer look for a release tag by that name.
+    """
+
+    # Everything os-release is specified to define.
+    OS_RELEASE_FIELDS = {
+        "NAME", "VERSION", "ID", "ID_LIKE", "VERSION_ID", "VERSION_CODENAME",
+        "PRETTY_NAME", "ANSI_COLOR", "CPE_NAME", "HOME_URL", "SUPPORT_URL",
+        "DOCUMENTATION_URL", "BUG_REPORT_URL", "PRIVACY_POLICY_URL", "LOGO",
+        "BUILD_ID", "VARIANT", "VARIANT_ID", "IMAGE_ID", "IMAGE_VERSION",
+    }
+
+    def test_no_variable_collides_with_os_release(self):
+        import re
+        from pathlib import Path
+
+        installer = (Path(__file__).resolve().parent.parent / "install.sh").read_text(
+            encoding="utf-8"
+        )
+        assigned = set()
+        for line in installer.splitlines():
+            line = line.strip()
+            if line.startswith("#"):
+                continue
+            match = re.match(r"^(?:export\s+)?([A-Z_][A-Z0-9_]*)=", line)
+            if match:
+                assigned.add(match.group(1))
+
+        collisions = assigned & self.OS_RELEASE_FIELDS
+        assert not collisions, (
+            f"install.sh assigns {sorted(collisions)}, which /etc/os-release also "
+            "defines; sourcing it would overwrite them"
+        )
+
+    def test_release_pinning_uses_a_safe_name(self):
+        from pathlib import Path
+
+        installer = (Path(__file__).resolve().parent.parent / "install.sh").read_text(
+            encoding="utf-8"
+        )
+        # The caller still passes VERSION=...; it is captured under another
+        # name before /etc/os-release is sourced.
+        assert 'RELEASE_TAG="${VERSION:-}"' in installer
+        assert installer.index('RELEASE_TAG="${VERSION:-}"') < installer.index(
+            ". /etc/os-release"
+        )
+
+    def test_shallow_installs_are_deepened(self):
+        from pathlib import Path
+
+        installer = (Path(__file__).resolve().parent.parent / "install.sh").read_text(
+            encoding="utf-8"
+        )
+        # Older versions of this script cloned shallow, which cannot reach a tag.
+        assert "--is-shallow-repository" in installer
+        assert "--unshallow" in installer

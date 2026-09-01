@@ -7,6 +7,20 @@ An update never rewrites your ledger. `schema.sql` is applied with
 appear on their own. Any release that alters an existing column will say so
 here, explicitly, along with what to do about it.
 
+## 1.1.1
+
+### Fixed
+
+- **The installer failed on Debian with `no such release: 12 (bookworm)`.**
+  `install.sh` sources `/etc/os-release` to identify the distribution, and
+  Debian defines `VERSION="12 (bookworm)"` in there - which silently replaced
+  the release tag the caller had asked for. The value is now captured as
+  `RELEASE_TAG` before that file is sourced. A test asserts no variable in the
+  installer collides with an os-release field.
+- Installations made by an earlier version of the installer were shallow
+  clones, which cannot check out an older tag. The installer now deepens them
+  on the way past, so rolling back works on an existing install.
+
 ## 1.1.0
 
 ### Changed

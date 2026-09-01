@@ -20,8 +20,12 @@ set -euo pipefail
 REPO_URL="${REPO_URL:-https://github.com/tahashemi/hashemwise.git}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/hashemwise}"
 BRANCH="${BRANCH:-main}"
-# A git tag such as v1.1.0. Empty means track the branch.
-VERSION="${VERSION:-}"
+
+# A git tag such as v1.1.0; empty means track the branch. Captured under a
+# different name because this script sources /etc/os-release further down, and
+# Debian sets VERSION="12 (bookworm)" in there - which would otherwise silently
+# replace whatever the caller asked for.
+RELEASE_TAG="${VERSION:-}"
 
 # Must match READY_MARKER in src/main.py.
 READY_MARKER="startup complete:"
@@ -112,6 +116,11 @@ fi
 # actually be present.
 if [ -d "$INSTALL_DIR/.git" ]; then
     say "Updating $INSTALL_DIR"
+    # Installs made by an earlier version of this script are shallow, and a
+    # shallow checkout cannot reach an older tag. Deepen it once.
+    if [ "$(git -C "$INSTALL_DIR" rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
+        git -C "$INSTALL_DIR" fetch --quiet --unshallow || true
+    fi
     git -C "$INSTALL_DIR" fetch --quiet --tags --force origin
 else
     say "Cloning into $INSTALL_DIR"
@@ -119,9 +128,10 @@ else
     git clone --quiet "$REPO_URL" "$INSTALL_DIR"
 fi
 
-if [ -n "$VERSION" ]; then
-    git -C "$INSTALL_DIR" rev-parse --verify --quiet "refs/tags/$VERSION" >/dev/null         || die "no such release: $VERSION"
-    git -C "$INSTALL_DIR" checkout --quiet --force "$VERSION"
+if [ -n "$RELEASE_TAG" ]; then
+    git -C "$INSTALL_DIR" rev-parse --verify --quiet "refs/tags/$RELEASE_TAG" >/dev/null \
+        || die "no such release: $RELEASE_TAG"
+    git -C "$INSTALL_DIR" checkout --quiet --force "$RELEASE_TAG"
 else
     git -C "$INSTALL_DIR" checkout --quiet --force -B "$BRANCH" "origin/$BRANCH"
 fi
