@@ -409,3 +409,55 @@ class TestAdminPreferences:
 
         await queries.set_setting(db, "admin_lang", "kl")
         assert await get_admin_lang(db) == "en"
+
+
+class TestUpgradeFromAnOlderDatabase:
+    """The README promises an update never touches your data.
+
+    Simulated by dropping the table this release added, which leaves exactly
+    the shape a 1.0.0 ledger has on disk, then reopening it with the current
+    code the way a restart after `git pull` would.
+    """
+
+    async def test_settings_table_appears_and_data_survives(self, tmp_path):
+        from src.db.connection import Database
+        from src.ledger import net_balances
+        from src.money import split_equal
+
+        path = tmp_path / "old.db"
+
+        old = Database(path)
+        await old.connect()
+        await queries.upsert_group(old, -100, "Trip")
+        await queries.set_group_active(old, -100, True)
+        people = [await queries.add_member(old, -100, n) for n in ("Ali", "Bita", "Cyrus")]
+        await queries.create_expense(
+            old, group_id=-100, payer_id=people[0], amount_minor=150_000,
+            currency_code="IRT", description="petrol", created_by_tg=101,
+            shares=split_equal(150_000, people, people[0]), idem_key=key(),
+        )
+        before = await net_balances(old, -100)
+        # Roll the schema back to what 1.0.0 had on disk.
+        await old.execute("DROP TABLE settings")
+        assert await old.fetchvalue(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='settings'"
+        ) == 0
+        await old.close()
+
+        upgraded = Database(path)
+        await upgraded.connect()
+        try:
+            # The new table is created on connect, with no migration step.
+            assert await upgraded.fetchvalue(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='settings'"
+            ) == 1
+            await queries.set_setting(upgraded, "admin_lang", "fa")
+            assert await queries.get_setting(upgraded, "admin_lang") == "fa"
+
+            # And nothing that was already there has moved.
+            assert (await queries.get_group(upgraded, -100)).title == "Trip"
+            assert len(await queries.list_members(upgraded, -100)) == 3
+            assert await queries.count_history(upgraded, -100) == 1
+            assert await net_balances(upgraded, -100) == before
+        finally:
+            await upgraded.close()
