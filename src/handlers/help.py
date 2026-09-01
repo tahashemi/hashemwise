@@ -14,6 +14,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 from src.i18n import t
+from src.version import __version__
 
 router = Router(name="help")
 
@@ -38,3 +39,9 @@ async def help_command(message: Message, lang: str, is_super_admin: bool) -> Non
         parse_mode="HTML",
         disable_web_page_preview=True,
     )
+
+
+@router.message(Command("version"))
+async def version_command(message: Message, lang: str) -> None:
+    """Report the running version, so a server's state is checkable from chat."""
+    await message.answer(t("version_line", lang, version=__version__), parse_mode="HTML")

@@ -12,17 +12,28 @@ class TestHelpText:
     @pytest.mark.parametrize("lang", ["en", "fa"])
     def test_mentions_every_everyday_command(self, lang):
         text = help_text(lang, include_admin=False)
-        for command in ("/expense", "/settle", "/balances", "/members", "/cancel", "/setup"):
+        for command in (
+            "/expense", "/settle", "/balances", "/members", "/history", "/cancel", "/setup"
+        ):
             assert command in text, command
 
     def test_admin_commands_hidden_from_ordinary_members(self):
         # Listing commands that only answer "you can't do that" is noise.
         text = help_text("en", include_admin=False)
-        assert "/history" not in text and "/auth" not in text
+        assert "/auth" not in text and "/deauth" not in text
 
     def test_admin_commands_shown_to_the_admin(self):
         text = help_text("en", include_admin=True)
-        assert "/history" in text and "/auth" in text
+        assert "/auth" in text and "/groups" in text
+
+    @pytest.mark.parametrize("lang", ["en", "fa"])
+    def test_history_is_offered_to_everyone(self, lang):
+        # Reading history is open to the whole group; only deleting is not.
+        assert "/history" in help_text(lang, include_admin=False)
+
+    @pytest.mark.parametrize("lang", ["en", "fa"])
+    def test_version_is_offered_to_everyone(self, lang):
+        assert "/version" in help_text(lang, include_admin=False)
 
     @pytest.mark.parametrize("lang", ["en", "fa"])
     def test_explains_the_surprising_behaviours(self, lang):

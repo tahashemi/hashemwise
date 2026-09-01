@@ -42,3 +42,15 @@ class SettleStates(StatesGroup):
 class HistoryStates(StatesGroup):
     browsing = State()
     confirm_delete = State()
+
+
+class AdminStates(StatesGroup):
+    """The admin group panel.
+
+    Only `add_group_id` needs a state at all - it is the one step that waits
+    for typed input. The rest of the panel is stateless: every button carries
+    what it needs, and every handler re-checks `is_super_admin`, so the menu
+    keeps working after a restart instead of going dead.
+    """
+
+    add_group_id = State()

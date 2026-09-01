@@ -10,12 +10,21 @@
 #
 # Safe to re-run: it updates the code and restarts, keeping the existing
 # ledger and .env untouched.
+#
+# Install or roll back to a specific release:
+#
+#   curl -fsSL .../install.sh | sudo VERSION=v1.0.0 bash
 
 set -euo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/tahashemi/hashemwise.git}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/hashemwise}"
 BRANCH="${BRANCH:-main}"
+# A git tag such as v1.1.0. Empty means track the branch.
+VERSION="${VERSION:-}"
+
+# Must match READY_MARKER in src/main.py.
+READY_MARKER="startup complete:"
 
 BOLD=$'\033[1m'; RED=$'\033[31m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; OFF=$'\033[0m'
 
@@ -99,17 +108,24 @@ fi
 
 # ---------------------------------------------------------------- source
 
+# A full clone, not --depth 1: rolling back to a tag needs the history to
+# actually be present.
 if [ -d "$INSTALL_DIR/.git" ]; then
     say "Updating $INSTALL_DIR"
-    git -C "$INSTALL_DIR" fetch --quiet origin "$BRANCH"
-    git -C "$INSTALL_DIR" reset --quiet --hard "origin/$BRANCH"
-    ok "updated to $(git -C "$INSTALL_DIR" rev-parse --short HEAD)"
+    git -C "$INSTALL_DIR" fetch --quiet --tags --force origin
 else
     say "Cloning into $INSTALL_DIR"
     [ -e "$INSTALL_DIR" ] && die "$INSTALL_DIR exists but is not a git checkout; move it aside first"
-    git clone --quiet --branch "$BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR"
-    ok "cloned"
+    git clone --quiet "$REPO_URL" "$INSTALL_DIR"
 fi
+
+if [ -n "$VERSION" ]; then
+    git -C "$INSTALL_DIR" rev-parse --verify --quiet "refs/tags/$VERSION" >/dev/null         || die "no such release: $VERSION"
+    git -C "$INSTALL_DIR" checkout --quiet --force "$VERSION"
+else
+    git -C "$INSTALL_DIR" checkout --quiet --force -B "$BRANCH" "origin/$BRANCH"
+fi
+ok "on $(git -C "$INSTALL_DIR" describe --tags --always) ($(git -C "$INSTALL_DIR" rev-parse --short HEAD))"
 
 cd "$INSTALL_DIR"
 
@@ -165,7 +181,7 @@ docker compose up -d --build
 say "Waiting for Telegram to accept the token"
 started=""
 for _ in $(seq 1 30); do
-    if docker compose logs --no-color 2>/dev/null | grep -q "starting as @"; then
+    if docker compose logs --no-color 2>/dev/null | grep -q "$READY_MARKER"; then
         started="yes"; break
     fi
     if [ "$(docker inspect hashemwise-bot --format '{{.RestartCount}}' 2>/dev/null || echo 0)" -gt 0 ]; then
@@ -175,7 +191,7 @@ for _ in $(seq 1 30); do
 done
 
 if [ -n "$started" ]; then
-    ok "Hashemwise is running as $(docker compose logs --no-color 2>/dev/null | grep -o 'starting as @[A-Za-z0-9_]*' | tail -1 | cut -d@ -f2)"
+    ok "Hashemwise $(git describe --tags --always) is running as $(docker compose logs --no-color 2>/dev/null | grep -o 'as @[A-Za-z0-9_]*' | tail -1 | cut -d@ -f2)"
     printf '\n%sNext:%s\n' "$BOLD" "$OFF"
     printf '  1. Add the bot to your Telegram group.\n'
     printf '  2. You will get a private message with an Authorize button - press it.\n'

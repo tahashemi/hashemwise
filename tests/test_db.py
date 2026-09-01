@@ -318,3 +318,94 @@ class TestBulkSplits:
         a = await _expense(db, group, members, 300)
         await queries.void_expense(db, a, 101)
         assert len((await queries.get_splits_for_expenses(db, [a]))[a]) == 3
+
+
+class TestDeleteGroup:
+    """Permanently deleting a group must take everything with it, and nothing else."""
+
+    async def test_removes_the_group(self, db, group, members):
+        await queries.delete_group(db, group)
+        assert await queries.get_group(db, group) is None
+
+    async def test_cascades_to_every_table(self, db, group, members):
+        eid = await _expense(db, group, members, 300)
+        await queries.create_settlement(
+            db, group_id=group, payer_id=members[1], payee_id=members[0],
+            amount_minor=100, currency_code="IRT", created_by_tg=102, idem_key=key(),
+        )
+        assert await db.fetchvalue("SELECT COUNT(*) FROM expense_splits") == 3
+
+        await queries.delete_group(db, group)
+
+        for table in ("groups", "users", "expenses", "expense_splits", "settlements"):
+            assert await db.fetchvalue(f"SELECT COUNT(*) FROM {table}") == 0, table
+        assert await queries.get_expense(db, eid) is None
+
+    async def test_leaves_other_groups_untouched(self, db, group, members):
+        await queries.upsert_group(db, -555, "Other")
+        other = [
+            await queries.add_member(db, -555, "Dara"),
+            await queries.add_member(db, -555, "Elham"),
+        ]
+        await _expense(db, -555, other, 1000)
+        await _expense(db, group, members, 300)
+
+        await queries.delete_group(db, group)
+
+        assert await queries.get_group(db, -555) is not None
+        assert len(await queries.list_members(db, -555)) == 2
+        assert await queries.count_history(db, -555) == 1
+
+    async def test_deleting_an_unknown_group_is_harmless(self, db, group, members):
+        await queries.delete_group(db, -99999)
+        assert await queries.get_group(db, group) is not None
+
+
+class TestSettings:
+    async def test_unset_returns_the_default(self, db):
+        assert await queries.get_setting(db, "nope") is None
+        assert await queries.get_setting(db, "nope", "fallback") == "fallback"
+
+    async def test_round_trip(self, db):
+        await queries.set_setting(db, "admin_lang", "fa")
+        assert await queries.get_setting(db, "admin_lang") == "fa"
+
+    async def test_setting_twice_overwrites(self, db):
+        await queries.set_setting(db, "admin_lang", "fa")
+        await queries.set_setting(db, "admin_lang", "en")
+        assert await queries.get_setting(db, "admin_lang") == "en"
+        assert await db.fetchvalue("SELECT COUNT(*) FROM settings") == 1
+
+    async def test_settings_survive_a_reconnect(self, db, tmp_path):
+        from src.db.connection import Database
+
+        path = tmp_path / "persist.db"
+        first = Database(path)
+        await first.connect()
+        await queries.set_setting(first, "admin_lang", "fa")
+        await first.close()
+
+        second = Database(path)
+        await second.connect()
+        assert await queries.get_setting(second, "admin_lang") == "fa"
+        await second.close()
+
+
+class TestAdminPreferences:
+    async def test_defaults_to_english(self, db):
+        from src.admin_prefs import get_admin_lang
+
+        assert await get_admin_lang(db) == "en"
+
+    async def test_reads_what_was_stored(self, db):
+        from src.admin_prefs import get_admin_lang, set_admin_lang
+
+        await set_admin_lang(db, "fa")
+        assert await get_admin_lang(db) == "fa"
+
+    async def test_unknown_language_falls_back(self, db):
+        # A downgrade must not leave the panel rendering raw translation keys.
+        from src.admin_prefs import get_admin_lang
+
+        await queries.set_setting(db, "admin_lang", "kl")
+        assert await get_admin_lang(db) == "en"

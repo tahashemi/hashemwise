@@ -9,14 +9,18 @@ from __future__ import annotations
 
 import pytest
 
-from src.db.queries import Member
+from src.db.queries import Group, Member
 from src.keyboards import (
     CALLBACK_DATA_LIMIT,
+    AdminCB,
     FlowCB,
     authorize_keyboard,
     confirm_keyboard,
     currency_keyboard,
     delete_confirm_keyboard,
+    group_delete_keyboard,
+    group_detail_keyboard,
+    groups_panel_keyboard,
     history_keyboard,
     language_keyboard,
     member_keyboard,
@@ -136,7 +140,10 @@ class TestHistoryKeyboard:
             {"kind": "expense", "id": 1, "voided_at": "2026-01-01T00:00:00Z"},
             {"kind": "expense", "id": 2, "voided_at": None},
         ]
-        data = all_data(history_keyboard(entries, 1, 1, "tok12345", BIG_OWNER, "en"))
+        # can_delete: these are the admin's buttons; nobody else sees any.
+        data = all_data(
+            history_keyboard(entries, 1, 1, "tok12345", BIG_OWNER, "en", can_delete=True)
+        )
         assert any("e2" in d for d in data)
         assert not any("e1" in d for d in data)
 
@@ -158,3 +165,98 @@ class TestTokens:
         keys = {new_idem_key() for _ in range(1000)}
         assert len(keys) == 1000
         assert all(len(k) == 32 for k in keys)
+
+
+class TestHistoryDeletePermission:
+    """Reading /history is open to the group; deleting is not.
+
+    The handlers are what enforce this; these check the presentation matches so
+    members are not shown a button that would only refuse them.
+    """
+
+    def _entries(self):
+        return [
+            {"kind": "expense", "id": 1, "voided_at": None},
+            {"kind": "settlement", "id": 2, "voided_at": None},
+            {"kind": "expense", "id": 3, "voided_at": "2026-01-01T00:00:00Z"},
+        ]
+
+    def test_member_gets_no_delete_buttons(self):
+        data = all_data(history_keyboard(self._entries(), 1, 1, "tok12345", BIG_OWNER, "en"))
+        assert not any("hdel" in d for d in data)
+
+    def test_admin_gets_one_delete_button_per_live_entry(self):
+        data = all_data(
+            history_keyboard(self._entries(), 1, 1, "tok12345", BIG_OWNER, "en", can_delete=True)
+        )
+        assert sum("hdel" in d for d in data) == 2  # the voided one is skipped
+
+    def test_paging_still_works_without_delete(self):
+        data = all_data(history_keyboard(self._entries(), 2, 3, "tok12345", BIG_OWNER, "en"))
+        assert sum("hpage" in d for d in data) == 2
+
+    def test_default_is_no_delete(self):
+        # Forgetting the argument must fail closed, not open.
+        assert not any(
+            "hdel" in d
+            for d in all_data(history_keyboard(self._entries(), 1, 1, "t", BIG_OWNER, "en"))
+        )
+
+
+class TestAdminGroupPanel:
+    def _groups(self):
+        return [
+            Group(BIG_GROUP, "A group with a really quite long title", True, "IRT", "en", True),
+            Group(BIG_GROUP + 1, "Office", False, "USD", "fa", True),
+        ]
+
+    def test_panel_fits_the_callback_limit(self):
+        assert_within_limit(groups_panel_keyboard(self._groups(), 2, 5, "en", "fa", "فارسی"))
+
+    def test_detail_fits_the_callback_limit(self):
+        for g in self._groups():
+            assert_within_limit(group_detail_keyboard(g, "en"))
+
+    def test_delete_confirm_fits_the_callback_limit(self):
+        assert_within_limit(group_delete_keyboard(BIG_GROUP, 999_999, "en"))
+
+    def test_long_titles_are_trimmed(self):
+        labels = [
+            b.text for r in groups_panel_keyboard(self._groups(), 1, 1, "en", "fa", "x").inline_keyboard
+            for b in r
+        ]
+        assert all(len(label) < 40 for label in labels)
+
+    def test_active_group_offers_revoke_not_authorize(self):
+        data = all_data(group_detail_keyboard(self._groups()[0], "en"))
+        assert any("grevoke" in d for d in data)
+        assert not any("gauth" in d for d in data)
+
+    def test_revoked_group_offers_authorize_not_revoke(self):
+        data = all_data(group_detail_keyboard(self._groups()[1], "en"))
+        assert any("gauth" in d for d in data)
+        assert not any("grevoke" in d for d in data)
+
+    def test_delete_confirmation_carries_the_entry_count(self):
+        # The handler refuses if this no longer matches, so a stale menu cannot
+        # delete a group that has grown since it was drawn.
+        data = all_data(group_delete_keyboard(BIG_GROUP, 42, "en"))
+        confirm = next(d for d in data if "gdelok" in d)
+        assert confirm.endswith(f"{BIG_GROUP}|42")
+
+    def test_add_and_language_buttons_are_present(self):
+        data = all_data(groups_panel_keyboard(self._groups(), 1, 1, "en", "fa", "فارسی"))
+        assert any(d.startswith("ad:gadd") for d in data)
+        assert any("glang:fa" in d for d in data)
+
+    def test_empty_list_still_offers_add(self):
+        data = all_data(groups_panel_keyboard([], 1, 1, "en", "fa", "فارسی"))
+        assert any(d.startswith("ad:gadd") for d in data)
+
+    def test_admin_callbacks_round_trip(self):
+        restored = AdminCB.unpack(AdminCB(a="gdelok", v=f"{BIG_GROUP}|7").pack())
+        assert restored.a == "gdelok" and restored.v == f"{BIG_GROUP}|7"
+
+    def test_valueless_admin_action_round_trips(self):
+        restored = AdminCB.unpack(AdminCB(a="gadd").pack())
+        assert restored.a == "gadd" and restored.v is None

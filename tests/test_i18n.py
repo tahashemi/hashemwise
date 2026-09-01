@@ -63,3 +63,25 @@ class TestLookup:
         # A handler must not crash and lose the user's half-entered expense
         # just because a string was formatted with the wrong argument.
         assert t("join_done", "en") == EN["join_done"]
+
+
+class TestNoDuplicateKeys:
+    """A repeated key in a dict literal is silently dropped by Python.
+
+    The parity test cannot see it, because by the time the module is imported
+    only the last value survives. Parsing the source is the only way to catch
+    a translation that was quietly overwritten.
+    """
+
+    @pytest.mark.parametrize("path", ["src/i18n/en.py", "src/i18n/fa.py"])
+    def test_no_key_is_defined_twice(self, path):
+        import ast
+        import collections
+        from pathlib import Path
+
+        source = (Path(__file__).resolve().parent.parent / path).read_text(encoding="utf-8")
+        for node in ast.walk(ast.parse(source)):
+            if isinstance(node, ast.Dict):
+                keys = [k.value for k in node.keys if isinstance(k, ast.Constant)]
+                duplicates = [k for k, n in collections.Counter(keys).items() if n > 1]
+                assert not duplicates, f"{path} defines {duplicates} more than once"

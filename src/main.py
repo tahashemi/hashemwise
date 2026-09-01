@@ -24,13 +24,18 @@ from aiogram.types import BotCommand
 
 from src.config import Settings, get_settings
 from src.db.connection import Database
-from src.handlers import admin, balances, expense, history, settle, setup
+from src.handlers import admin, balances, expense, groups, history, settle, setup
 from src.handlers import help as help_handler
 from src.i18n.en import COMMANDS as EN_COMMANDS
 from src.i18n.fa import COMMANDS as FA_COMMANDS
 from src.middlewares.auth import AuthMiddleware
+from src.version import __version__
 
 COMMAND_MENUS = {"en": EN_COMMANDS, "fa": FA_COMMANDS}
+
+# Logged once Telegram has accepted the token. install.sh waits for this exact
+# string; a test asserts the two agree.
+READY_MARKER = "startup complete:"
 
 log = logging.getLogger("hashemwise")
 
@@ -50,7 +55,9 @@ def build_dispatcher(db: Database, settings: Settings) -> Dispatcher:
     # gets recorded and surfaced to the admin in the first place.
     dispatcher.my_chat_member.outer_middleware(_inject_dependencies(db, settings))
 
-    for module in (admin, setup, help_handler, expense, settle, balances, history):
+    # `groups` before `admin` so the interactive panel claims /groups in a
+    # private chat; admin's plain-text version keeps it inside a group.
+    for module in (groups, admin, setup, help_handler, expense, settle, balances, history):
         dispatcher.include_router(module.router)
 
     return dispatcher
@@ -112,7 +119,17 @@ async def run() -> None:
 
     try:
         me = await bot.get_me()
-        log.info("starting as @%s (super admin %s)", me.username, settings.super_admin_id)
+        # install.sh greps for READY_MARKER to decide whether the bot actually
+        # authenticated, rather than trusting that the container is "running" -
+        # a bad token produces a crash loop that looks running every few
+        # seconds. Change this string and you must change install.sh with it.
+        log.info(
+            "%s Hashemwise v%s as @%s (super admin %s)",
+            READY_MARKER,
+            __version__,
+            me.username,
+            settings.super_admin_id,
+        )
         # Drop anything queued while the bot was down: replaying a week of
         # stale button presses against fresh state would be worse than
         # losing them.

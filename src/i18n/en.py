@@ -40,13 +40,17 @@ STRINGS: dict[str, str] = {
         "/balances - who owes what, and the shortest list of payments that "
         "clears the group.\n"
         "/members - everyone in the group, and who has linked an account.\n"
+        "/history - everything recorded here, with exactly what each person was "
+        "charged. Anyone can read it; only the bot administrator can delete.\n"
+        "/version - which version of me is running.\n"
         "/cancel - abandon whatever you are in the middle of."
     ),
     "help_admin": (
         "<b>Bot administrator only</b>\n"
-        "/history - every entry with its full per-person breakdown, and a "
-        "button to delete mistakes.\n"
-        "/auth, /deauth, /groups - control which groups may use me."
+        "/groups - in our private chat, manage every group: authorize, revoke, "
+        "add one by its chat id, or delete one and its whole ledger.\n"
+        "/auth, /deauth - authorize or revoke the group you are standing in.\n"
+        "Delete buttons in /history are yours alone."
     ),
     "help_notes": (
         "<b>Worth knowing</b>\n"
@@ -60,7 +64,7 @@ STRINGS: dict[str, str] = {
     "cancelled": "Cancelled.",
     "nothing_to_cancel": "You are not in the middle of anything.",
     "btn_cancel": "Cancel",
-    "btn_back": "Back",
+    "btn_back": "← Back",
     "btn_done": "Done",
     "btn_confirm": "Confirm",
     "btn_yes": "Yes",
@@ -89,6 +93,59 @@ STRINGS: dict[str, str] = {
     "groups_header": "<b>Groups</b>",
     "groups_empty": "I have not been added to any group yet.",
     "group_row": "{mark} <b>{title}</b>\n    <code>{group_id}</code> - {currency}, {lang}",
+    # -- admin group panel (private chat) ---------------------------------
+    "panel_header": "<b>Groups</b> ({count})\nTap one to manage it.",
+    "panel_empty": (
+        "<b>Groups</b>\n\nI am not in any group yet. Add me to one, or press "
+        "the button below if you know its chat id."
+    ),
+    "panel_page": "<b>Groups</b> ({count}) - page {page} of {pages}\nTap one to manage it.",
+    "btn_add_group": "➕ Add a group",
+    "btn_language": "🌐 {name}",
+    "group_detail": (
+        "{mark} <b>{title}</b>\n"
+        "<code>{group_id}</code>\n"
+        "{currency} · {lang} · {members} member(s) · {entries} entr(y/ies)"
+    ),
+    "group_detail_active": "This group can use me.",
+    "group_detail_revoked": "This group is revoked and cannot use me.",
+    "btn_authorize_group": "✅ Authorize",
+    "btn_revoke_group": "⛔ Revoke access",
+    "btn_delete_group": "🗑 Delete permanently",
+    "group_revoked": "Access revoked. The ledger is kept and re-authorizing restores it.",
+    "group_authorized": "Authorized.",
+    "group_gone": "That group is no longer here. The list has been refreshed.",
+    "group_delete_confirm": (
+        "<b>Delete {title}?</b>\n\n"
+        "This removes the group, its {members} member(s) and all {entries} "
+        "recorded entr(y/ies), permanently.\n\n"
+        "<b>There is no undo.</b> To keep the ledger and only stop the bot "
+        "working there, revoke access instead."
+    ),
+    "btn_delete_group_confirm": "Yes, delete everything",
+    "group_deleted": "<b>{title}</b> and all of its data have been deleted.",
+    "group_changed_since": (
+        "That group has changed since this menu was drawn, so I have not "
+        "deleted anything. Open it again and check."
+    ),
+    "group_add_prompt": (
+        "Send me the group's chat id - a negative number like "
+        "<code>-1001234567890</code>.\n\n"
+        "I must already be a member of it. If I am not, add me to the group "
+        "first; you can get the id from @userinfobot by forwarding a message "
+        "from that group to it."
+    ),
+    "group_add_bad_id": "That is not a chat id. It should be a negative number.",
+    "group_add_unreachable": (
+        "I cannot see a chat with that id. Add me to the group first, then try "
+        "again."
+    ),
+    "group_add_not_a_group": "That id is not a group.",
+    "group_add_done": "<b>{title}</b> added and authorized.",
+    "group_add_already": "<b>{title}</b> was already here. It is authorized now.",
+    "admin_lang_set": "Admin language set to {name}.",
+    # -- version ----------------------------------------------------------
+    "version_line": "Hashemwise <b>v{version}</b>",
     # -- setup ------------------------------------------------------------
     "setup_currency": "Which currency does this group use?",
     "setup_currency_locked": (
@@ -210,6 +267,7 @@ COMMANDS: list[tuple[str, str]] = [
     ("expense", "Record an expense"),
     ("settle", "Record a payment between two people"),
     ("balances", "Who owes whom"),
+    ("history", "Everything recorded, and each person's share"),
     ("members", "List the group's members"),
     ("join", "Link your Telegram account to a name"),
     ("setup", "Configure this group"),

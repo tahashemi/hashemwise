@@ -130,6 +130,20 @@ async def list_groups(db: Database) -> list[Group]:
     ]
 
 
+async def delete_group(db: Database, group_id: int) -> None:
+    """Delete a group and everything belonging to it, permanently.
+
+    The `ON DELETE CASCADE` chain in schema.sql takes the members, expenses,
+    splits and settlements with it. That only happens because
+    `PRAGMA foreign_keys` is on, which `connection.py` verifies at startup and
+    refuses to run without - otherwise this would silently orphan every row
+    instead of removing it.
+
+    There is no undo. Callers must confirm with the user first.
+    """
+    await db.execute("DELETE FROM groups WHERE group_id = ?", (group_id,))
+
+
 async def group_has_entries(db: Database, group_id: int) -> bool:
     """True if the group has any expense or settlement, voided or not.
 
@@ -518,4 +532,23 @@ async def count_history(db: Database, group_id: int) -> int:
         "       (SELECT COUNT(*) FROM settlements WHERE group_id = ?)",
         (group_id, group_id),
         default=0,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Bot-wide settings
+# ---------------------------------------------------------------------------
+
+
+async def get_setting(db: Database, key: str, default: str | None = None) -> str | None:
+    """Read a bot-wide preference, or `default` if it has never been set."""
+    row = await db.fetchone("SELECT value FROM settings WHERE key = ?", (key,))
+    return row["value"] if row is not None else default
+
+
+async def set_setting(db: Database, key: str, value: str) -> None:
+    await db.execute(
+        "INSERT INTO settings (key, value) VALUES (?, ?) "
+        "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+        (key, value),
     )

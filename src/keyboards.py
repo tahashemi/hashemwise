@@ -193,12 +193,17 @@ def authorize_keyboard(group_id: int, lang: str) -> InlineKeyboardMarkup:
 
 
 def history_keyboard(
-    entries, page: int, pages: int, flow: str, owner: int, lang: str
+    entries, page: int, pages: int, flow: str, owner: int, lang: str, can_delete: bool = False
 ) -> InlineKeyboardMarkup:
-    """Delete/Edit per live entry, plus paging. Voided rows get no buttons."""
+    """Paging for everyone; a Delete button per live entry only for the admin.
+
+    Reading history is open to the whole group, but deleting is not. Hiding the
+    buttons is presentation only - the handlers in `handlers/history.py` re-check
+    `is_super_admin`, and that is what actually enforces it.
+    """
     builder = InlineKeyboardBuilder()
     for e in entries:
-        if e["voided_at"] is not None:
+        if not can_delete or e["voided_at"] is not None:
             continue
         ref = f"{'e' if e['kind'] == 'expense' else 's'}{e['id']}"
         builder.row(
@@ -240,4 +245,117 @@ def delete_confirm_keyboard(ref: str, flow: str, owner: int, lang: str) -> Inlin
         text=t("btn_no", lang), callback_data=FlowCB(t=flow, o=owner, a="hpage", v="1").pack()
     )
     builder.adjust(2)
+    return assert_fits(builder.as_markup())
+
+
+# ---------------------------------------------------------------------------
+# Admin group panel (private chat only)
+#
+# These use AdminCB, which carries no flow token and no owner: the panel only
+# ever exists in the administrator's own private chat, and every handler
+# re-checks `is_super_admin`. That is the security boundary, and it also means
+# the menu survives a restart instead of expiring like the group wizards do.
+# ---------------------------------------------------------------------------
+
+GROUPS_PAGE_SIZE = 8
+
+# Group titles are user-supplied and can be long; a button that wraps is worse
+# than one that is trimmed.
+MAX_BUTTON_TITLE = 24
+
+
+def _trim(text: str, limit: int = MAX_BUTTON_TITLE) -> str:
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def groups_panel_keyboard(
+    groups, page: int, pages: int, lang: str, other_lang: str, other_lang_name: str
+) -> InlineKeyboardMarkup:
+    """The group list: one button per group, plus Add and the language toggle."""
+    builder = InlineKeyboardBuilder()
+    for g in groups:
+        mark = "✅" if g.is_active else "⛔"
+        builder.row(
+            InlineKeyboardButton(
+                text=f"{mark} {_trim(g.title)}",
+                callback_data=AdminCB(a="gopen", v=str(g.group_id)).pack(),
+            )
+        )
+
+    nav: list[InlineKeyboardButton] = []
+    if page > 1:
+        nav.append(
+            InlineKeyboardButton(
+                text=t("btn_prev", lang), callback_data=AdminCB(a="glist", v=str(page - 1)).pack()
+            )
+        )
+    if page < pages:
+        nav.append(
+            InlineKeyboardButton(
+                text=t("btn_next", lang), callback_data=AdminCB(a="glist", v=str(page + 1)).pack()
+            )
+        )
+    if nav:
+        builder.row(*nav)
+
+    builder.row(
+        InlineKeyboardButton(
+            text=t("btn_add_group", lang), callback_data=AdminCB(a="gadd").pack()
+        ),
+        InlineKeyboardButton(
+            text=t("btn_language", lang, name=other_lang_name),
+            callback_data=AdminCB(a="glang", v=other_lang).pack(),
+        ),
+    )
+    return assert_fits(builder.as_markup())
+
+
+def group_detail_keyboard(group, lang: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    if group.is_active:
+        builder.row(
+            InlineKeyboardButton(
+                text=t("btn_revoke_group", lang),
+                callback_data=AdminCB(a="grevoke", v=str(group.group_id)).pack(),
+            )
+        )
+    else:
+        builder.row(
+            InlineKeyboardButton(
+                text=t("btn_authorize_group", lang),
+                callback_data=AdminCB(a="gauth", v=str(group.group_id)).pack(),
+            )
+        )
+    builder.row(
+        InlineKeyboardButton(
+            text=t("btn_delete_group", lang),
+            callback_data=AdminCB(a="gdel", v=str(group.group_id)).pack(),
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(text=t("btn_back", lang), callback_data=AdminCB(a="glist", v="1").pack())
+    )
+    return assert_fits(builder.as_markup())
+
+
+def group_delete_keyboard(group_id: int, entries: int, lang: str) -> InlineKeyboardMarkup:
+    """Confirm permanent deletion.
+
+    The entry count travels in the callback data so the handler can refuse if
+    the group has changed since this menu was drawn - a destructive confirm
+    must apply to the thing that was actually shown, not to whatever the group
+    happens to hold when the button is finally pressed.
+    """
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text=t("btn_delete_group_confirm", lang),
+            callback_data=AdminCB(a="gdelok", v=f"{group_id}|{entries}").pack(),
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text=t("btn_back", lang), callback_data=AdminCB(a="gopen", v=str(group_id)).pack()
+        )
+    )
     return assert_fits(builder.as_markup())

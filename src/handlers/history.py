@@ -1,7 +1,12 @@
-"""Hashemwise - /history, restricted to SUPER_ADMIN_ID.
+"""Hashemwise - /history.
 
-Viewing history, deleting an entry, and editing one are all admin-only in every
-group, per the configured permission model.
+**Reading is open to everyone in the group; deleting is SUPER_ADMIN_ID only.**
+
+History is the only place the per-person breakdown of an expense appears, so
+locking it to the admin left ordinary members able to see aggregate balances
+but never what they were personally charged for a given expense. The two delete
+handlers keep their admin check - that is what enforces this - and the delete
+buttons are simply not rendered for anybody else.
 
 Deleting is a soft delete: the row is marked voided and stays visible, struck
 through, so the record of what happened survives the correction. Editing voids
@@ -45,15 +50,20 @@ async def history_command(
     lang: str,
     is_super_admin: bool,
 ) -> None:
-    if not is_super_admin:
-        await message.answer(t("admin_only", lang))
-        return
-
     await state.clear()
     flow = new_flow_token()
     await state.set_state(HistoryStates.browsing)
     await state.update_data(flow=flow, owner=message.from_user.id)
-    await _render_page(message, db, group, lang, page=1, flow=flow, owner=message.from_user.id)
+    await _render_page(
+        message,
+        db,
+        group,
+        lang,
+        page=1,
+        flow=flow,
+        owner=message.from_user.id,
+        can_delete=is_super_admin,
+    )
 
 
 @router.callback_query(HistoryStates.browsing, FlowCB.filter(F.a == "hpage"))
@@ -67,9 +77,6 @@ async def history_page(
     lang: str,
     is_super_admin: bool,
 ) -> None:
-    if not is_super_admin:
-        await callback.answer(t("admin_only", lang), show_alert=True)
-        return
     if await owned_flow(callback, state, callback_data, lang) is None:
         return
 
@@ -84,6 +91,7 @@ async def history_page(
             flow=callback_data.t,
             owner=callback_data.o,
             edit=True,
+            can_delete=is_super_admin,
         )
 
 
@@ -165,6 +173,9 @@ async def history_delete(
             page=1,
             flow=callback_data.t,
             owner=callback_data.o,
+            # Only the admin reaches this handler, so the refreshed page keeps
+            # its delete buttons.
+            can_delete=True,
         )
 
 
@@ -196,7 +207,7 @@ async def _render_page(
     )
 
     body = history_block(entries, members, lang, page, pages, splits)
-    keyboard = history_keyboard(entries, page, pages, flow, owner, lang)
+    keyboard = history_keyboard(entries, page, pages, flow, owner, lang, can_delete)
 
     if edit:
         await message.edit_text(body, reply_markup=keyboard, parse_mode="HTML")

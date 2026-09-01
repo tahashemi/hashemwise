@@ -20,6 +20,7 @@ from typing import Any, Awaitable, Callable
 from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message, TelegramObject
 
+from src.admin_prefs import get_admin_lang
 from src.db import queries
 from src.db.connection import Database
 from src.i18n import DEFAULT_LANG, t
@@ -56,9 +57,11 @@ class AuthMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         if chat.type not in GROUP_CHAT_TYPES:
-            # Private chats hold no ledger; handlers gate themselves.
+            # Private chats hold no ledger, so handlers gate themselves. They
+            # also have no group language, so they follow the administrator's
+            # own toggle instead.
             data["group"] = None
-            data["lang"] = DEFAULT_LANG
+            data["lang"] = await get_admin_lang(self.db)
             return await handler(event, data)
 
         group = await queries.get_group(self.db, chat.id)

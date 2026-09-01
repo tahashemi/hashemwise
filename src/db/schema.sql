@@ -93,3 +93,11 @@ CREATE TABLE IF NOT EXISTS schema_meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+-- Bot-wide preferences that belong to no group, such as the language the
+-- administrator's private chat speaks. Kept apart from schema_meta, which is
+-- only for tracking the schema itself.
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);

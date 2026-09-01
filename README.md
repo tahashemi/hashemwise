@@ -13,7 +13,10 @@ listens on your server and no firewall rule is needed.
 - Shows each person's net position and the shortest list of payments that
   settles the whole group.
 - Runs many groups at once, each with its own currency, language and members.
-- English and Persian, chosen per group.
+- English and Persian, chosen per group, with a separate toggle for the
+  administrator's own private chat.
+- An admin panel in the bot's private chat for managing every group without
+  having to be inside it.
 - Corrections without rewriting the past: entries are voided, never deleted, and
   an edit records a replacement that points back at what it replaced.
 
@@ -37,7 +40,7 @@ received`, and a group's nets must sum to exactly zero. If they ever do not, the
 data is corrupt: the bot refuses to display the numbers and alerts the
 administrator rather than showing plausible wrong figures.
 
-**1,187 tests**, including Hypothesis property tests over thousands of randomly
+**1,253 tests**, including Hypothesis property tests over thousands of randomly
 generated ledgers — every one must settle to exactly zero in at most `n-1`
 payments — and worked examples checked against arithmetic done on paper.
 
@@ -68,8 +71,8 @@ id**, writes them to a `.env` readable only by root, builds the image, starts
 the bot, and waits until Telegram has actually accepted the token before telling
 you it worked.
 
-Re-running the same command updates to the latest version. Your ledger and your
-`.env` are left alone.
+Re-running the same command updates to the latest release — see
+[Updating](#updating). Your ledger and your `.env` are left alone.
 
 To supply the answers without being prompted — for scripting or a fresh VM
 image:
@@ -90,6 +93,7 @@ curl -fsSL https://raw.githubusercontent.com/tahashemi/hashemwise/main/install.s
 |---|---|
 | Install location | `INSTALL_DIR=/srv/hashemwise` before `bash` |
 | Branch | `BRANCH=develop` before `bash` |
+| A specific release | `VERSION=v1.0.0` before `bash` |
 | Proxy to Telegram | `TELEGRAM_PROXY=socks5://host:1080` before `bash` |
 
 ## Option 2 — Docker, by hand
@@ -123,9 +127,9 @@ Useful afterwards:
 docker compose logs -f
 ```
 
-`docker compose restart` restarts it, `docker compose down` stops it while
-leaving the ledger in `./data`, and `docker compose up -d --build` applies an
-update after a `git pull`.
+`docker compose restart` restarts it and `docker compose down` stops it while
+leaving the ledger in `./data`. See [Updating](#updating) below when a new
+release comes out.
 
 ## Option 3 — Plain Python, no Docker
 
@@ -198,9 +202,78 @@ sudo systemctl daemon-reload && sudo systemctl enable --now hashemwise
 sudo journalctl -u hashemwise -f
 ```
 
-Updating on this route: `git pull`, then
-`.venv/bin/pip install -r requirements.txt`, then
-`sudo systemctl restart hashemwise`.
+See [Updating](#updating) below when a new release comes out.
+
+---
+
+# Updating
+
+**Back up first.** The whole ledger is one SQLite file and `.backup` is safe to
+run while the bot is live:
+
+```bash
+sqlite3 /opt/hashemwise/data/ledger.db ".backup '/root/hashemwise-backup.db'"
+```
+
+**An update never touches your data.** `schema.sql` is applied with
+`CREATE TABLE/INDEX IF NOT EXISTS` on every start, so new tables and indexes
+appear by themselves and existing rows are left alone. Any release that changes
+an existing column will say so in [CHANGELOG.md](CHANGELOG.md), explicitly.
+
+### If you installed with the one-liner
+
+Run exactly the same command again:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tahashemi/hashemwise/main/install.sh | sudo bash
+```
+
+It fetches the latest code, rebuilds the image, restarts the bot, and waits
+until Telegram has accepted the token before reporting success. Your `.env` and
+`data/` are left untouched — it will not ask for your token again.
+
+### If you installed with Docker by hand
+
+```bash
+cd /opt/hashemwise && git pull && docker compose up -d --build
+```
+
+### If you are running it with plain Python
+
+```bash
+cd /opt/hashemwise && git pull && .venv/bin/pip install -r requirements.txt
+```
+
+```bash
+sudo systemctl restart hashemwise
+```
+
+## Which version am I running?
+
+Send `/version` to the bot, or on the server:
+
+```bash
+git -C /opt/hashemwise describe --tags
+```
+
+## Installing or rolling back to a specific release
+
+Every release is a git tag. To pin one, or to go back to it:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tahashemi/hashemwise/main/install.sh | sudo VERSION=v1.0.0 bash
+```
+
+By hand, in an existing checkout:
+
+```bash
+cd /opt/hashemwise && git fetch --tags && git checkout v1.0.0 && docker compose up -d --build
+```
+
+Going back to tracking the latest is the plain one-liner again, with no
+`VERSION`. Rolling back only changes the code — your ledger stays as it is, so
+check the changelog before going back across a release that touched the
+database.
 
 ---
 
@@ -229,9 +302,16 @@ Updating on this route: `git pull`, then
 | `/expense`, `/add` | group members | record an expense |
 | `/settle` | group members | record a payment between two people |
 | `/balances` | group members | net positions and suggested payments |
-| `/history` | **bot admin only** | every entry with its per-person breakdown, and delete |
+| `/history` | group members | every entry with its per-person breakdown. **Deleting is bot-admin only** |
+| `/version` | anyone | which version is running |
 | `/cancel` | anyone | abandon the current wizard |
-| `/auth`, `/deauth`, `/groups` | **bot admin only** | manage group access |
+| `/groups` | **bot admin only** | in the bot's private chat, an interactive panel: authorize, revoke, add a group by chat id, or delete one and its ledger |
+| `/auth`, `/deauth` | **bot admin only** | authorize or revoke the group you are in |
+
+Anyone in the group can read `/history` — it is the only place the per-person
+breakdown of an expense appears, so restricting it would leave members unable to
+see what they were personally charged. The delete buttons render for the bot
+administrator alone, and the handlers refuse anyone else regardless.
 
 ## Configuration
 

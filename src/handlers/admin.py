@@ -125,7 +125,9 @@ async def deauth_command(message: Message, db: Database, is_super_admin: bool, l
     await message.answer(t("deauth_done", lang))
 
 
-@router.message(Command("groups"))
+# In a private chat this is superseded by the interactive panel in
+# handlers/groups.py; here it stays as a plain list.
+@router.message(Command("groups"), F.chat.type != "private")
 async def groups_command(message: Message, db: Database, is_super_admin: bool, lang: str) -> None:
     if not is_super_admin:
         await message.answer(t("admin_only", lang))
