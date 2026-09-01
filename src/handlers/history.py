@@ -189,6 +189,9 @@ async def _render_page(
     flow: str,
     owner: int,
     edit: bool = False,
+    # Whether to draw the delete buttons. Defaults off so a caller that forgets
+    # it shows a member's view rather than handing out the admin's controls.
+    can_delete: bool = False,
 ) -> None:
     total = await queries.count_history(db, group.group_id)
     if total == 0:

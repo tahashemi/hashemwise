@@ -7,6 +7,27 @@ An update never rewrites your ledger. `schema.sql` is applied with
 appear on their own. Any release that alters an existing column will say so
 here, explicitly, along with what to do about it.
 
+## 1.1.3
+
+### Fixed
+
+- **`/history` did nothing at all.** Opening it to the whole group in 1.1.0
+  threaded a `can_delete` flag through to the keyboard, but the flag was added
+  to both call sites and to the function body without ever being added to
+  `_render_page`'s signature. Every `/history` raised `TypeError` before it
+  could reply, so the command was silent for everyone, admin included, from
+  1.1.0 to 1.1.2.
+
+### Added
+
+- **Routing tests.** The suite checked arithmetic, rendering and keyboards, but
+  nothing exercised aiogram's routing - which is the layer both of the recent
+  `/history` faults lived in. Real `Update` objects are now fed through the
+  real dispatcher with a session that records outgoing calls, asserting that
+  commands reach their handlers and that a member's view carries no delete
+  buttons while the administrator's does. This is the test that found the bug
+  above.
+
 ## 1.1.2
 
 ### Fixed

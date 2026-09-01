@@ -40,7 +40,7 @@ received`, and a group's nets must sum to exactly zero. If they ever do not, the
 data is corrupt: the bot refuses to display the numbers and alerts the
 administrator rather than showing plausible wrong figures.
 
-**1,263 tests**, including Hypothesis property tests over thousands of randomly
+**1,276 tests**, including Hypothesis property tests over thousands of randomly
 generated ledgers — every one must settle to exactly zero in at most `n-1`
 payments — and worked examples checked against arithmetic done on paper.
 
