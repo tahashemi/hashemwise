@@ -192,6 +192,9 @@ def authorize_keyboard(group_id: int, lang: str) -> InlineKeyboardMarkup:
     return assert_fits(builder.as_markup())
 
 
+DELETES_PER_ROW = 3
+
+
 def history_keyboard(
     entries, page: int, pages: int, flow: str, owner: int, lang: str, can_delete: bool = False
 ) -> InlineKeyboardMarkup:
@@ -202,11 +205,12 @@ def history_keyboard(
     `is_super_admin`, and that is what actually enforces it.
     """
     builder = InlineKeyboardBuilder()
+    deletes = []
     for e in entries:
         if not can_delete or e["voided_at"] is not None:
             continue
         ref = f"{'e' if e['kind'] == 'expense' else 's'}{e['id']}"
-        builder.row(
+        deletes.append(
             InlineKeyboardButton(
                 # Same E7/S3 label the entry itself carries, so the button
                 # is unambiguous when both kinds share an id number.
@@ -214,6 +218,10 @@ def history_keyboard(
                 callback_data=FlowCB(t=flow, o=owner, a="hdel", v=ref).pack(),
             )
         )
+    # Three to a row: a full page would otherwise stack ten full-width buttons
+    # under the table, longer than the table itself.
+    for i in range(0, len(deletes), DELETES_PER_ROW):
+        builder.row(*deletes[i : i + DELETES_PER_ROW])
 
     nav: list[InlineKeyboardButton] = []
     if page > 1:

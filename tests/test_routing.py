@@ -344,3 +344,20 @@ class TestDeliverEditing:
         dumped = method.model_dump(exclude_none=True)
         assert dumped["rich_message"]["is_rtl"] is True
         assert dumped["rich_message"]["blocks"][0]["cells"][0][0]["is_header"] is True
+
+
+async def test_history_page_holds_ten_entries(wired):
+    dispatcher, bot, session, db = wired
+    members = await queries.list_members(db, GROUP_ID)
+    ids = [m.user_id for m in members]
+    for i in range(11):  # 12 with the fixture's one
+        await queries.create_expense(
+            db, group_id=GROUP_ID, payer_id=ids[0], amount_minor=3_000 + i,
+            currency_code="IRT", description=f"item {i}", created_by_tg=ADMIN_ID,
+            shares=split_equal(3_000 + i, ids, ids[0]), idem_key=key(),
+        )
+    await feed(dispatcher, bot, make_message("/history", MEMBER_ID))
+    call = session.calls[-1]
+    table = call.rich_message["blocks"][0]
+    assert len(table["cells"]) == 1 + 10
+    assert "1 of 2" in table["caption"]

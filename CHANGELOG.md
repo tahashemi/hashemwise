@@ -18,6 +18,8 @@ here, explicitly, along with what to do about it.
   entries keep their row, struck through. `/balances` is two tables: where
   everyone stands, and the payments that would settle the group. In a Persian
   group the tables run right to left.
+- **Ten entries per `/history` page**, up from three. The admin's delete
+  buttons sit three to a row so they stay shorter than the table.
 - Amounts in the tables drop the currency unit from every cell; the currency
   is named once, in the table's caption.
 
@@ -26,6 +28,8 @@ here, explicitly, along with what to do about it.
 - **Falls back on its own.** If Telegram refuses a table - an API server older
   than 10.1, or a page wider than Telegram's 20-column limit (a page charging
   more than 15 people) - the bot sends the previous text layout instead.
+- The text fallback is limited to one 4096-character message, so on a busy
+  page it shows as many entries as fit and says how many it left out.
 - Group members on an old Telegram app may not see tables. Updating the app
   fixes it; nothing changes on the bot's side.
 - No database change.

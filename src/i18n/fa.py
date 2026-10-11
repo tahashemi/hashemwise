@@ -248,6 +248,7 @@ STRINGS: dict[str, str] = {
     "rt_owes": "بدهکار: {amount}",
     "rt_settled": "صاف",
     "history_header": "<b>تاریخچه</b> (صفحه {page} از {pages})",
+    "history_more_hidden": "<i>…و {count} مورد دیگر در این صفحه. برای دیدن همه به‌صورت جدول، تلگرام را به‌روز کنید.</i>",
     "history_empty": "هنوز چیزی ثبت نشده است.",
     "history_expense": "<b>#{id}</b>  {description}\n{amount} - پرداخت‌شده توسط {payer} - {date}",
     "history_settlement": "<b>#{id}</b>  {payer} به {payee} پرداخت کرد\n{amount} - {date}",

@@ -32,7 +32,7 @@ from src.handlers.common import owned_flow
 from src.i18n import t
 from src.keyboards import FlowCB, delete_confirm_keyboard, history_keyboard, new_flow_token
 from src import rich
-from src.render import entry_summary, history_block, history_rich
+from src.render import entry_summary, history_block_fitting, history_rich
 from src.states import HistoryStates
 from src.telegram_rich import deliver
 
@@ -40,7 +40,9 @@ log = logging.getLogger(__name__)
 
 router = Router(name="history")
 
-PAGE_SIZE = 3
+# Rows per page. A table holds far more than the old text layout did; the text
+# fallback, capped at 4096 characters, trims itself (see history_block_fitting).
+PAGE_SIZE = 10
 
 
 @router.message(Command("history"), F.chat.type.in_({"group", "supergroup"}))
@@ -220,7 +222,7 @@ async def _render_page(
         message,
         history_rich(entries, members, lang, page, pages, splits, group.currency_code),
         # The text layout, for when Telegram refuses the table.
-        history_block(entries, members, lang, page, pages, splits),
+        history_block_fitting(entries, members, lang, page, pages, splits),
         reply_markup=keyboard,
         edit=edit,
     )

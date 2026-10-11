@@ -244,6 +244,7 @@ STRINGS: dict[str, str] = {
     "rt_owes": "owes {amount}",
     "rt_settled": "settled",
     "history_header": "<b>History</b> (page {page} of {pages})",
+    "history_more_hidden": "<i>…and {count} more on this page. Update Telegram to see them all as a table.</i>",
     "history_empty": "Nothing recorded yet.",
     "history_expense": "<b>#{id}</b>  {description}\n{amount} - paid by {payer} - {date}",
     "history_settlement": "<b>#{id}</b>  {payer} paid {payee}\n{amount} - {date}",

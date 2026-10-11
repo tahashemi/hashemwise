@@ -383,3 +383,28 @@ def balances_rich(
         )
         blocks.append(rich.paragraph(t("rt_plan_note", lang, count=len(plan))))
     return rich.message(blocks, lang)
+
+
+# Telegram's limit for an ordinary text message.
+TEXT_LIMIT = 4096
+
+
+def history_block_fitting(
+    entries, members, lang: str, page: int, pages: int, splits, limit: int = TEXT_LIMIT
+) -> str:
+    """The text layout of a page, trimmed to fit one message.
+
+    Only used when Telegram refuses the table. A page sized for a table can
+    run past 4096 characters as text, and an over-long message is rejected
+    outright - which would turn the fallback into no reply at all. Entries are
+    dropped from the end, and the message says how many.
+    """
+    for keep in range(len(entries), 0, -1):
+        text = history_block(entries[:keep], members, lang, page, pages, splits)
+        if keep < len(entries):
+            text += "\n\n" + t("history_more_hidden", lang, count=len(entries) - keep)
+        if len(text) <= limit:
+            return text
+    # Even one entry is too long (a very large group): cut it hard rather than
+    # send nothing.
+    return history_block(entries[:1], members, lang, page, pages, splits)[: limit - 1] + "…"

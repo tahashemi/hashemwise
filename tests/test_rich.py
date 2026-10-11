@@ -239,3 +239,61 @@ class TestBalancesTables:
             elif status.startswith("owes "):
                 total -= number(status.removeprefix("owes "))
         assert total == 0
+
+
+class TestBiggerPages:
+    """Ten rows a page: the table fits easily, the text fallback must trim."""
+
+    def big_page(self, n=10, people=15):
+        members = [member(i, f"Person number {i:02d} with a long name") for i in range(1, people + 1)]
+        ids = [m.user_id for m in members]
+        entries = [expense(i, 1, 999_999_999 + i, "x" * 120) for i in range(n, 0, -1)]
+        splits = {e["id"]: split_equal(e["amount_minor"], ids, 1) for e in entries}
+        return entries, members, splits
+
+    def test_full_page_table_fits_telegram_limits(self):
+        from src.handlers.history import PAGE_SIZE
+
+        entries, members, splits = self.big_page(PAGE_SIZE)
+        msg = history_rich(entries, members, "fa", 1, 9, splits, "IRT")
+        assert rich.fits(msg)
+        assert len(the_table(msg)["cells"]) == PAGE_SIZE + 1
+        # Rich messages are capped at 32768 characters of text.
+        assert sum(len(s) for s in _strings(msg)) < 32768
+
+    @pytest.mark.parametrize("lang", ["en", "fa"])
+    def test_text_fallback_never_exceeds_one_message(self, lang):
+        from src.render import TEXT_LIMIT, history_block, history_block_fitting
+
+        entries, members, splits = self.big_page()
+        assert len(history_block(entries, members, lang, 1, 1, splits)) > TEXT_LIMIT  # premise
+        text = history_block_fitting(entries, members, lang, 1, 1, splits)
+        assert len(text) <= TEXT_LIMIT
+        assert ("more on this page" in text) or ("مورد دیگر" in text)
+
+    def test_small_page_fallback_is_untrimmed(self):
+        from src.render import history_block, history_block_fitting
+
+        shares = split_equal(300, [ALI, BITA], ALI)
+        args = ([expense(1, ALI, 300)], MEMBERS, "en", 1, 1, {1: shares})
+        assert history_block_fitting(*args) == history_block(*args)
+
+    def test_delete_buttons_three_to_a_row(self):
+        from src.keyboards import history_keyboard
+
+        entries = [expense(i, ALI, 100) for i in range(10, 0, -1)]
+        kb = history_keyboard(entries, 1, 2, "abcdefgh", 111, "en", can_delete=True)
+        rows = [len(r) for r in kb.inline_keyboard]
+        assert rows[:4] == [3, 3, 3, 1]  # ten delete buttons
+        assert sum(rows[:4]) == 10
+
+
+def _strings(node):
+    if isinstance(node, str):
+        yield node
+    elif isinstance(node, dict):
+        for v in node.values():
+            yield from _strings(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from _strings(v)
