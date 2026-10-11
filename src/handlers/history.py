@@ -31,8 +31,10 @@ from src.db.queries import Group
 from src.handlers.common import owned_flow
 from src.i18n import t
 from src.keyboards import FlowCB, delete_confirm_keyboard, history_keyboard, new_flow_token
-from src.render import entry_summary, history_block
+from src import rich
+from src.render import entry_summary, history_block, history_rich
 from src.states import HistoryStates
+from src.telegram_rich import deliver
 
 log = logging.getLogger(__name__)
 
@@ -125,16 +127,21 @@ async def history_delete_prompt(
     )
     await state.set_state(HistoryStates.confirm_delete)
     if callback.message:
-        await callback.message.edit_text(
-            t(
-                "history_delete_confirm",
-                lang,
-                summary=entry_summary(entry, members, lang, splits),
-            ),
+        # The page being replaced is a rich message, so the confirmation is
+        # sent as one too; editing it with plain text would change its kind.
+        text = t(
+            "history_delete_confirm",
+            lang,
+            summary=entry_summary(entry, members, lang, splits),
+        )
+        await deliver(
+            callback.message,
+            rich.html_message(text, lang),
+            text,
             reply_markup=delete_confirm_keyboard(
                 callback_data.v, callback_data.t, callback_data.o, lang
             ),
-            parse_mode="HTML",
+            edit=True,
         )
 
 
@@ -162,9 +169,8 @@ async def history_delete(
 
     await state.set_state(HistoryStates.browsing)
     if callback.message:
-        await callback.message.edit_text(
-            t("history_deleted" if done else "history_already_deleted", lang)
-        )
+        notice = t("history_deleted" if done else "history_already_deleted", lang)
+        await deliver(callback.message, rich.html_message(notice, lang), notice, edit=True)
         await _render_page(
             callback.message,
             db,
@@ -209,13 +215,15 @@ async def _render_page(
         db, [e["id"] for e in entries if e["kind"] == "expense"]
     )
 
-    body = history_block(entries, members, lang, page, pages, splits)
     keyboard = history_keyboard(entries, page, pages, flow, owner, lang, can_delete)
-
-    if edit:
-        await message.edit_text(body, reply_markup=keyboard, parse_mode="HTML")
-    else:
-        await message.answer(body, reply_markup=keyboard, parse_mode="HTML")
+    await deliver(
+        message,
+        history_rich(entries, members, lang, page, pages, splits, group.currency_code),
+        # The text layout, for when Telegram refuses the table.
+        history_block(entries, members, lang, page, pages, splits),
+        reply_markup=keyboard,
+        edit=edit,
+    )
 
 
 def _parse_ref(ref: str) -> tuple[str, int]:

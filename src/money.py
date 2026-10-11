@@ -186,8 +186,12 @@ def _is_plain_decimal(s: str) -> bool:
     return bool(digits) and digits.isascii() and digits.isdigit()
 
 
-def format_amount(minor: int, currency_code: str, lang: str = "en") -> str:
-    """Render minor units for display. Handles negatives (balances go both ways)."""
+def format_amount(minor: int, currency_code: str, lang: str = "en", *, unit: bool = True) -> str:
+    """Render minor units for display. Handles negatives (balances go both ways).
+
+    `unit=False` gives the bare number, for table cells where the currency is
+    stated once in the caption instead of repeated in every cell.
+    """
     cur = get_currency(currency_code)
     negative = minor < 0
     magnitude = abs(int(minor))
@@ -197,6 +201,9 @@ def format_amount(minor: int, currency_code: str, lang: str = "en") -> str:
         number = f"{whole:,}.{fraction:0{cur.decimals}d}"
     else:
         number = f"{magnitude:,}"
+
+    if not unit:
+        return f"-{number}" if negative else number
 
     # Western digits even in Persian: mixing Persian numerals into RTL text
     # makes long amounts genuinely hard to read back.

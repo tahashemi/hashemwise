@@ -21,6 +21,7 @@ from src.currencies import get_currency
 from src.debt_engine import Transfer
 from src.i18n import t
 from src.money import format_amount
+from src import rich
 
 
 def esc(text: str) -> str:
@@ -251,3 +252,134 @@ def entry_summary(
 
     table = split_table(shares, members, currency, lang, payer_id=entry["payer_id"])
     return f"{header}\n{t('history_shares_label', lang)}\n{table}"
+
+
+# --------------------------------------------------------------------------
+# Native tables (Bot API rich messages)
+#
+# Built from raw names, never `esc()`: a rich-message cell is a RichText string,
+# which Telegram does not parse, so escaping would show a literal `&amp;`.
+# Amounts are bare numbers, with the currency stated once in the caption.
+# --------------------------------------------------------------------------
+
+
+def _unit(currency: str, lang: str) -> str:
+    # The name, not the symbol: "amounts in T" reads as a typo, and the caption
+    # is the only place the currency appears once the cells drop their units.
+    cur = get_currency(currency)
+    return cur.name_fa if lang == "fa" else cur.name_en
+
+
+def _number(minor: int, currency: str, lang: str) -> str:
+    return format_amount(minor, currency, lang, unit=False)
+
+
+def history_rich(
+    entries,
+    members,
+    lang: str,
+    page: int,
+    pages: int,
+    splits: Mapping[int, Mapping[int, int]],
+    currency: str,
+) -> dict:
+    """One table per page: an entry per row, a column per person charged.
+
+    Only people who appear in this page's splits get a column, so a page stays
+    as narrow as it can. A deleted entry keeps its row, struck through - the
+    same rule as the text layout: a correction stays visible to everyone.
+    """
+    charged = sorted(
+        {uid for e in entries if e["kind"] == "expense" for uid in splits.get(e["id"], {})},
+        key=lambda uid: (raw_name_of(members, uid).casefold(), uid),
+    )
+
+    headers = [
+        t("rt_col_id", lang),
+        t("rt_col_date", lang),
+        t("rt_col_what", lang),
+        t("rt_col_paid_by", lang),
+        t("rt_col_total", lang),
+    ] + [raw_name_of(members, uid) for uid in charged]
+
+    rows = []
+    for e in entries:
+        payer = raw_name_of(members, e["payer_id"])
+        if e["kind"] == "expense":
+            what = e["description"]
+            shares = splits.get(e["id"], {})
+            per_person = [
+                _number(shares[uid], currency, lang) if uid in shares else "—" for uid in charged
+            ]
+        else:
+            what = t(
+                "rt_settlement", lang, payer=payer, payee=raw_name_of(members, e["payee_id"])
+            )
+            # A settlement moves money between the two people already named in
+            # the row; it charges nobody, so it has no per-person shares.
+            per_person = ["—"] * len(charged)
+
+        row = [
+            display_id(e),
+            _short_date(e["created_at"])[5:],  # MM-DD HH:MM; the year is noise
+            what,
+            payer,
+            _number(e["amount_minor"], currency, lang),
+            *per_person,
+        ]
+        if e["voided_at"] is not None:
+            row[2] = f"{what} ({t('rt_deleted', lang)})"
+            row = [rich.struck(c) for c in row]
+        rows.append(row)
+
+    caption = t("rt_history_caption", lang, page=page, pages=pages, unit=_unit(currency, lang))
+    return rich.message([rich.table(headers, rows, caption)], lang)
+
+
+def balances_rich(
+    balances: Mapping[int, int], plan: Sequence[Transfer], members, currency: str, lang: str
+) -> dict:
+    """Net positions, then the suggested payments, as two tables."""
+    if all(v == 0 for v in balances.values()):
+        return rich.message([rich.paragraph(t("balances_all_settled", lang))], lang)
+
+    def rank(item):
+        uid, value = item
+        bucket = 0 if value > 0 else (1 if value < 0 else 2)
+        return (bucket, -abs(value), uid)
+
+    rows = []
+    for uid, value in sorted(balances.items(), key=rank):
+        if value > 0:
+            status = t("rt_is_owed", lang, amount=_number(value, currency, lang))
+        elif value < 0:
+            status = t("rt_owes", lang, amount=_number(-value, currency, lang))
+        else:
+            status = t("rt_settled", lang)
+        rows.append([raw_name_of(members, uid), status])
+
+    unit = _unit(currency, lang)
+    blocks = [
+        rich.table(
+            [t("rt_col_member", lang), t("rt_col_balance", lang)],
+            rows,
+            t("rt_balances_caption", lang, unit=unit),
+        )
+    ]
+    if plan:
+        blocks.append(
+            rich.table(
+                [t("rt_col_from", lang), t("rt_col_to", lang), t("rt_col_amount", lang)],
+                [
+                    [
+                        raw_name_of(members, tr.from_user),
+                        raw_name_of(members, tr.to_user),
+                        _number(tr.amount_minor, currency, lang),
+                    ]
+                    for tr in plan
+                ],
+                t("rt_plan_caption", lang, unit=unit),
+            )
+        )
+        blocks.append(rich.paragraph(t("rt_plan_note", lang, count=len(plan))))
+    return rich.message(blocks, lang)

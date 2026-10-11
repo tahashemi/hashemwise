@@ -7,6 +7,29 @@ An update never rewrites your ledger. `schema.sql` is applied with
 appear on their own. Any release that alters an existing column will say so
 here, explicitly, along with what to do about it.
 
+## 1.2.0
+
+### Added
+
+- **Real tables.** `/history` and `/balances` are now sent as native Telegram
+  tables (Bot API 10.1 rich messages) instead of text lined up with spaces.
+  `/history` puts one entry per row and gives each person charged their own
+  column, so what everyone paid for an expense reads straight across. Deleted
+  entries keep their row, struck through. `/balances` is two tables: where
+  everyone stands, and the payments that would settle the group. In a Persian
+  group the tables run right to left.
+- Amounts in the tables drop the currency unit from every cell; the currency
+  is named once, in the table's caption.
+
+### Notes
+
+- **Falls back on its own.** If Telegram refuses a table - an API server older
+  than 10.1, or a page wider than Telegram's 20-column limit (a page charging
+  more than 15 people) - the bot sends the previous text layout instead.
+- Group members on an old Telegram app may not see tables. Updating the app
+  fixes it; nothing changes on the bot's side.
+- No database change.
+
 ## 1.1.3
 
 ### Fixed

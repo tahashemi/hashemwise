@@ -18,6 +18,7 @@ import pytest
 import pytest_asyncio
 from aiogram import Bot
 from aiogram.client.session.base import BaseSession
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.methods import TelegramMethod
 from aiogram.types import Chat, Message, Update, User
 
@@ -33,12 +34,37 @@ ADMIN_ID = 111222333
 MEMBER_ID = 444555666
 
 
+SENDS = {"SendMessage", "EditMessageText", "SendRichMessage", "EditRichMessage"}
+RICH = {"SendRichMessage", "EditRichMessage"}
+
+
+def flatten(node) -> list[str]:
+    """Every human-readable string in a rich-message payload.
+
+    Only text-bearing fields are collected; `type`, `align` and the like are
+    schema, not content, and would let an assertion pass on the word "table".
+    """
+    if isinstance(node, str):
+        return [node]
+    if isinstance(node, list):
+        return [s for item in node for s in flatten(item)]
+    if isinstance(node, dict):
+        out = []
+        for k in ("text", "caption", "html", "markdown", "blocks", "cells"):
+            if k in node:
+                out += flatten(node[k])
+        return out
+    return []
+
+
 class RecordingSession(BaseSession):
     """Captures API calls instead of performing them."""
 
     def __init__(self) -> None:
         super().__init__()
         self.calls: list[TelegramMethod] = []
+        # Set to make every rich message fail, as an older API server would.
+        self.refuse_rich = False
 
     async def close(self) -> None:  # pragma: no cover - nothing to close
         pass
@@ -49,7 +75,9 @@ class RecordingSession(BaseSession):
     async def make_request(self, bot: Bot, method: TelegramMethod, timeout: int | None = None):
         self.calls.append(method)
         name = type(method).__name__
-        if name in {"SendMessage", "EditMessageText"}:
+        if name in RICH and self.refuse_rich:
+            raise TelegramBadRequest(method=method, message="Bad Request: method not found")
+        if name in SENDS:
             return Message.model_construct(
                 message_id=999,
                 date=dt.datetime.now(dt.timezone.utc),
@@ -60,12 +88,19 @@ class RecordingSession(BaseSession):
             return User.model_construct(id=42, is_bot=True, first_name="Test", username="testbot")
         return True
 
-    # What was actually sent, as plain text.
+    # What was actually sent, as plain text - rich payloads flattened.
     def texts(self) -> list[str]:
-        return [
-            getattr(c, "text", "") for c in self.calls
-            if type(c).__name__ in {"SendMessage", "EditMessageText"}
-        ]
+        out = []
+        for c in self.calls:
+            name = type(c).__name__
+            if name in RICH and not self.refuse_rich:
+                out.append(" ".join(flatten(c.rich_message)))
+            elif name in SENDS and name not in RICH:
+                out.append(getattr(c, "text", ""))
+        return out
+
+    def kinds(self) -> list[str]:
+        return [type(c).__name__ for c in self.calls if type(c).__name__ in SENDS]
 
 
 def make_message(text: str, user_id: int, chat_id: int = GROUP_ID, chat_type: str = "supergroup"):
@@ -210,3 +245,102 @@ class TestOtherCommandsRoute:
         await queries.set_group_active(db, GROUP_ID, False)
         await feed(dispatcher, bot, make_message("/history", MEMBER_ID))
         assert "not authorized" in " ".join(session.texts()).lower()
+
+
+class TestNativeTables:
+    """/history and /balances send real tables, and fall back to text."""
+
+    @pytest.mark.parametrize("command", ["/history", "/balances"])
+    async def test_sent_as_a_rich_message(self, wired, command):
+        dispatcher, bot, session, _ = wired
+        await feed(dispatcher, bot, make_message(command, MEMBER_ID))
+        assert session.kinds() == ["SendRichMessage"]
+        call = session.calls[-1]
+        assert call.chat_id == GROUP_ID
+        assert any(b["type"] == "table" for b in call.rich_message["blocks"])
+
+    async def test_history_table_keeps_the_page_buttons(self, wired):
+        dispatcher, bot, session, _ = wired
+        await feed(dispatcher, bot, make_message("/history", ADMIN_ID))
+        markup = session.calls[-1].reply_markup
+        assert markup is not None and markup.inline_keyboard
+
+    async def test_history_table_shows_each_share(self, wired):
+        dispatcher, bot, session, _ = wired
+        await feed(dispatcher, bot, make_message("/history", MEMBER_ID))
+        sent = " ".join(session.texts())
+        for expected in ("petrol for the trip", "Ali", "Bita", "Cyrus", "150,000", "50,000"):
+            assert expected in sent
+
+    @pytest.mark.parametrize("command", ["/history", "/balances"])
+    async def test_refused_table_falls_back_to_text(self, wired, command):
+        dispatcher, bot, session, _ = wired
+        session.refuse_rich = True
+        await feed(dispatcher, bot, make_message(command, MEMBER_ID))
+        assert session.kinds() == ["SendRichMessage", "SendMessage"]
+        fallback = session.calls[-1].text
+        assert fallback, f"{command} fell back to an empty message"
+        assert "50,000" in fallback  # Bita's share, or her balance: both 50,000
+
+    async def test_fallback_keeps_the_buttons(self, wired):
+        dispatcher, bot, session, _ = wired
+        session.refuse_rich = True
+        await feed(dispatcher, bot, make_message("/history", ADMIN_ID))
+        data = [b.callback_data for row in session.calls[-1].reply_markup.inline_keyboard
+                for b in row]
+        assert any("hdel" in d for d in data)
+
+
+class TestDeliverEditing:
+    """Paging and delete confirmations replace the message in place."""
+
+    def bot_message(self, bot):
+        return Message.model_construct(
+            message_id=77,
+            date=dt.datetime.now(dt.timezone.utc),
+            chat=Chat.model_construct(id=GROUP_ID, type="supergroup"),
+            text="",
+        ).as_(bot)
+
+    async def test_edit_uses_edit_message_text_with_rich_message(self, wired):
+        from src import rich
+        from src.telegram_rich import deliver
+
+        _, bot, session, _ = wired
+        await deliver(self.bot_message(bot), rich.html_message("<b>x</b>", "en"), "x", edit=True)
+        call = session.calls[-1]
+        assert type(call).__name__ == "EditRichMessage"
+        assert call.__api_method__ == "editMessageText"
+        assert (call.chat_id, call.message_id) == (GROUP_ID, 77)
+        assert call.rich_message == {"html": "<b>x</b>", "is_rtl": False}
+
+    async def test_refused_edit_falls_back_to_a_text_edit(self, wired):
+        from src import rich
+        from src.telegram_rich import deliver
+
+        _, bot, session, _ = wired
+        session.refuse_rich = True
+        await deliver(self.bot_message(bot), rich.html_message("<b>x</b>", "en"), "x", edit=True)
+        assert session.kinds() == ["EditRichMessage", "EditMessageText"]
+
+    async def test_oversized_table_skips_straight_to_text(self, wired):
+        from src import rich
+        from src.telegram_rich import deliver
+
+        _, bot, session, _ = wired
+        wide = rich.message([rich.table(["h"] * 21, [["c"] * 21])], "en")
+        await deliver(self.bot_message(bot), wide, "fallback")
+        assert session.kinds() == ["SendMessage"]
+
+    async def test_payload_serialises_with_the_documented_method_name(self, wired):
+        # What actually goes over the wire, through aiogram's own serialiser.
+        from src import rich
+        from src.telegram_rich import SendRichMessage
+
+        _, bot, session, _ = wired
+        method = SendRichMessage(chat_id=GROUP_ID, rich_message=rich.message(
+            [rich.table(["a"], [["1"]])], "fa"))
+        assert method.__api_method__ == "sendRichMessage"
+        dumped = method.model_dump(exclude_none=True)
+        assert dumped["rich_message"]["is_rtl"] is True
+        assert dumped["rich_message"]["blocks"][0]["cells"][0][0]["is_header"] is True

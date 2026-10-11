@@ -22,7 +22,8 @@ from src.db.queries import Group
 from src.debt_engine import LedgerImbalance, reduce_debts
 from src.i18n import t
 from src.ledger import net_balances
-from src.render import balances_block, plan_block
+from src.render import balances_block, balances_rich, plan_block
+from src.telegram_rich import deliver
 
 log = logging.getLogger(__name__)
 
@@ -60,7 +61,12 @@ async def balances_command(
     if suggestion:
         parts.append(suggestion)
 
-    await message.answer("\n\n".join(parts), parse_mode="HTML")
+    await deliver(
+        message,
+        balances_rich(balances, plan, members, group.currency_code, lang),
+        # The text layout, for when Telegram refuses the tables.
+        "\n\n".join(parts),
+    )
 
 
 async def _alert_admin(bot: Bot, super_admin_id: int, group: Group, exc: LedgerImbalance) -> None:

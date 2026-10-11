@@ -301,8 +301,8 @@ database.
 | `/members` | group members | list members |
 | `/expense`, `/add` | group members | record an expense |
 | `/settle` | group members | record a payment between two people |
-| `/balances` | group members | net positions and suggested payments |
-| `/history` | group members | every entry with its per-person breakdown. **Deleting is bot-admin only** |
+| `/balances` | group members | net positions and suggested payments, as tables |
+| `/history` | group members | a table of every entry, with a column for what each person was charged. **Deleting is bot-admin only** |
 | `/version` | anyone | which version is running |
 | `/cancel` | anyone | abandon the current wizard |
 | `/groups` | **bot admin only** | in the bot's private chat, an interactive panel: authorize, revoke, add a group by chat id, or delete one and its ledger |
@@ -318,7 +318,7 @@ administrator alone, and the handlers refuse anyone else regardless.
 | Variable | Required | Meaning |
 |---|---|---|
 | `BOT_TOKEN` | yes | from @BotFather |
-| `SUPER_ADMIN_ID` | yes | your numeric Telegram user id; the only account that may authorize groups, view `/history` or delete entries |
+| `SUPER_ADMIN_ID` | yes | your numeric Telegram user id; the only account that may authorize groups or delete entries |
 | `DB_PATH` | no | `/app/data/ledger.db` under Docker, `data/ledger.db` otherwise |
 | `TELEGRAM_PROXY` | no | `http://…` or `socks5://…` where `api.telegram.org` is unreachable |
 | `LOG_LEVEL` | no | `DEBUG`, `INFO` (default), `WARNING`, `ERROR` |
